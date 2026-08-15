@@ -109,8 +109,7 @@ async def _run_sql_and_reply(
         affected = "n/a" if result.rowcount is None else str(result.rowcount)
         await status.edit_text(
             f"Готово за {result.elapsed_ms} мс.\n"
-            f"Затронуто строк: {affected}\n\n"
-            "Можете отправить следующий SQL.",
+            f"Затронуто строк: {affected}",
             reply_markup=query_result_kb(None, can_favorite=True),
         )
         return
@@ -127,10 +126,6 @@ async def _run_sql_and_reply(
     await message.answer_rich(
         rich_message=rich,
         reply_markup=query_result_kb(run_id, can_favorite=True),
-    )
-    await message.answer(
-        f"Выполнено за {result.elapsed_ms} мс. Можете отправить следующий SQL "
-        "или сохранить текущий в избранное.",
     )
     await state.set_state(QueryForm.waiting_sql)
 
