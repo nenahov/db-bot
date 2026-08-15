@@ -6,7 +6,7 @@ import re
 
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.filters import Filter
+from aiogram.filters import Command, Filter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -90,6 +90,7 @@ async def import_connection_card(message: Message, state: FSMContext) -> None:
     )
 
 
+@router.message(Command("connections"))
 @router.message(F.text == MENU_TEXT_CONNECTIONS)
 async def list_connections_msg(message: Message, session: AsyncSession, state: FSMContext) -> None:
     await state.clear()

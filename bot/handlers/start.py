@@ -45,6 +45,7 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
     await _show_main_menu(message)
 
 
+@router.message(Command("current"))
 @router.message(F.text == MENU_TEXT_CURRENT)
 async def show_current_msg(
     message: Message,

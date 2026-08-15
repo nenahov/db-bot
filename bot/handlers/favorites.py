@@ -5,6 +5,7 @@ import logging
 
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,6 +26,7 @@ router = Router(name="favorites")
 logger = logging.getLogger(__name__)
 
 
+@router.message(Command("favorites"))
 @router.message(F.text == MENU_TEXT_FAVORITES)
 async def favorites_entry(message: Message, state: FSMContext) -> None:
     await state.clear()

@@ -5,6 +5,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import BotCommand
 
 from bot.config import get_settings
 from bot.db.session import close_db, get_session_factory, init_db
@@ -38,6 +39,16 @@ async def main() -> None:
     dp.update.middleware(DbSessionMiddleware(session_factory))
 
     dp.include_router(setup_routers())
+
+    await bot.set_my_commands(
+        [
+            BotCommand(command="start", description="Главное меню"),
+            BotCommand(command="menu", description="Главное меню"),
+            BotCommand(command="connections", description="Подключения"),
+            BotCommand(command="favorites", description="Избранное"),
+            BotCommand(command="current", description="Текущее подключение"),
+        ]
+    )
 
     logger.info("Bot starting (polling)")
     try:
