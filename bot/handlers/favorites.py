@@ -4,6 +4,7 @@ import html
 import logging
 
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,10 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bot.db import repositories as repo
 from bot.keyboards.common import (
     MENU_TEXT_FAVORITES,
+    cancel_kb,
     favorite_card_kb,
     favorites_list_kb,
     favorites_menu_kb,
-    main_menu_kb,
 )
 from bot.states.forms import QueryForm
 
@@ -22,26 +23,24 @@ router = Router(name="favorites")
 logger = logging.getLogger(__name__)
 
 
-async def send_favorites_menu(target: Message) -> None:
-    await target.answer(
-        "Избранные запросы:",
-        reply_markup=favorites_menu_kb(),
-    )
-
-
 @router.message(F.text == MENU_TEXT_FAVORITES)
 async def favorites_entry(message: Message, state: FSMContext) -> None:
     await state.clear()
-    await send_favorites_menu(message)
-
-
-@router.callback_query(F.data == "fav:menu")
-async def favorites_menu_cb(callback: CallbackQuery, state: FSMContext) -> None:
-    await state.clear()
-    await callback.message.edit_text(
+    await message.answer(
         "Избранные запросы:",
         reply_markup=favorites_menu_kb(),
     )
+
+
+@router.callback_query(F.data.in_({"fav:menu", "menu:favorites"}))
+async def favorites_menu_cb(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    text = "Избранные запросы:"
+    markup = favorites_menu_kb()
+    try:
+        await callback.message.edit_text(text, reply_markup=markup)
+    except TelegramBadRequest:
+        await callback.message.answer(text, reply_markup=markup)
     await callback.answer()
 
 
@@ -137,7 +136,7 @@ async def edit_and_run_favorite(
         f"<b>{html.escape(conn_label)}</b>.\n"
         "Отредактируйте SQL и отправьте сообщение для выполнения:\n\n"
         f"<pre>{html.escape(fav.sql_text)}</pre>",
-        reply_markup=main_menu_kb(),
+        reply_markup=cancel_kb(),
     )
     await callback.answer()
 

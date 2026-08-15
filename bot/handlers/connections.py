@@ -5,6 +5,8 @@ import logging
 import re
 
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.filters import Filter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +26,11 @@ from bot.keyboards.common import (
     main_menu_kb,
     skip_default_port_kb,
 )
+from bot.services.connection_card import (
+    ConnectionCardParseError,
+    looks_like_connection_card,
+    parse_connection_card,
+)
 from bot.services.crypto import PasswordCipher
 from bot.services.executors import test_connection
 from bot.states.forms import ConnectionForm
@@ -35,6 +42,11 @@ DEFAULT_PORTS = {
     DbType.POSTGRES: 5432,
     DbType.CLICKHOUSE: 8123,
 }
+
+
+class IsConnectionCard(Filter):
+    async def __call__(self, message: Message) -> bool:
+        return looks_like_connection_card(message.text or "")
 
 
 def format_connection_card(conn: DbConnection, is_active: bool) -> str:
@@ -50,18 +62,43 @@ def format_connection_card(conn: DbConnection, is_active: bool) -> str:
     )
 
 
+@router.message(
+    IsConnectionCard(),
+    F.text,
+    ~F.text.in_(MENU_TEXTS),
+    ~F.text.startswith("/"),
+)
+async def import_connection_card(message: Message, state: FSMContext) -> None:
+    try:
+        parsed = parse_connection_card(message.text or "")
+    except ConnectionCardParseError as exc:
+        await message.answer(f"Не удалось разобрать карточку: {exc}")
+        return
+
+    await state.update_data(
+        name=parsed.name,
+        db_type=parsed.db_type,
+        host=parsed.host,
+        port=parsed.port,
+        database=parsed.database,
+        username=parsed.username,
+    )
+    await state.set_state(ConnectionForm.password)
+    await message.answer(
+        f"Карточка «{html.escape(parsed.name)}» распознана.\nВведите пароль:",
+        reply_markup=cancel_kb(),
+    )
+
+
 @router.message(F.text == MENU_TEXT_CONNECTIONS)
 async def list_connections_msg(message: Message, session: AsyncSession, state: FSMContext) -> None:
     await state.clear()
     connections = await repo.list_connections(session, message.from_user.id)
-    if not connections:
-        text = "Подключений пока нет. Добавьте первое."
-    else:
-        text = "Выберите подключение:"
+    text = "Выберите подключение:" if connections else "Подключений пока нет. Добавьте первое."
     await message.answer(text, reply_markup=connections_list_kb(connections))
 
 
-@router.callback_query(F.data == "conn:list")
+@router.callback_query(F.data.in_({"conn:list", "menu:connections"}))
 async def list_connections_cb(
     callback: CallbackQuery,
     session: AsyncSession,
@@ -69,8 +106,11 @@ async def list_connections_cb(
 ) -> None:
     await state.clear()
     connections = await repo.list_connections(session, callback.from_user.id)
-    text = "Выберите подключение:" if connections else "Подключений пока нет."
-    await callback.message.edit_text(text, reply_markup=connections_list_kb(connections))
+    text = "Выберите подключение:" if connections else "Подключений пока нет. Добавьте первое."
+    try:
+        await callback.message.edit_text(text, reply_markup=connections_list_kb(connections))
+    except TelegramBadRequest:
+        await callback.message.answer(text, reply_markup=connections_list_kb(connections))
     await callback.answer()
 
 
@@ -241,28 +281,47 @@ async def add_password(
         return
 
     try:
-        conn = await repo.create_connection(
+        existing = await repo.get_connection_by_name(
             session,
-            user_id=message.from_user.id,
-            name=data["name"],
-            db_type=data["db_type"],
-            host=data["host"],
-            port=int(data["port"]),
-            database=data["database"],
-            username=data["username"],
-            password_encrypted=encrypted,
+            message.from_user.id,
+            data["name"],
         )
+        if existing is None:
+            conn = await repo.create_connection(
+                session,
+                user_id=message.from_user.id,
+                name=data["name"],
+                db_type=data["db_type"],
+                host=data["host"],
+                port=int(data["port"]),
+                database=data["database"],
+                username=data["username"],
+                password_encrypted=encrypted,
+            )
+            saved_as = "сохранено"
+        else:
+            conn = await repo.update_connection(
+                session,
+                existing,
+                db_type=data["db_type"],
+                host=data["host"],
+                port=int(data["port"]),
+                database=data["database"],
+                username=data["username"],
+                password_encrypted=encrypted,
+            )
+            saved_as = "обновлено"
     except Exception as exc:
-        logger.exception("create_connection failed")
+        logger.exception("save_connection failed")
         await status_msg.edit_text(f"Ошибка сохранения: {exc}")
         await state.clear()
         return
 
     await repo.set_active_connection(session, message.from_user.id, conn.id)
     await state.clear()
-    logger.info("user=%s add_connection id=%s", message.from_user.id, conn.id)
+    logger.info("user=%s save_connection id=%s", message.from_user.id, conn.id)
     await status_msg.edit_text(
-        "Подключение сохранено и выбрано как активное.\n\n"
+        f"Подключение {saved_as} и выбрано как активное.\n\n"
         + format_connection_card(conn, True),
         reply_markup=connection_card_kb(conn.id, True),
     )

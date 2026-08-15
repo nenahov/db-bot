@@ -18,6 +18,7 @@ def build_result_rich_message(
     columns: list[str],
     rows: list[list[object]],
     *,
+    connection_name: str,
     preview_rows: int,
     total_rows: int,
 ) -> InputRichMessage:
@@ -39,6 +40,7 @@ def build_result_rich_message(
 
     content = (
         f"<h3>Результат ({total_rows} строк)</h3>"
+        f"<p>Подключение: {html.escape(connection_name)}</p>"
         f"{truncated_note}"
         f"<table bordered><thead><tr>{header}</tr></thead>"
         f"<tbody>{''.join(body_rows)}</tbody></table>"

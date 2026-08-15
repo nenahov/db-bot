@@ -1,12 +1,12 @@
-from aiogram.types import InlineKeyboardMarkup, ReplyKeyboardMarkup
-from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
+from aiogram.types import InlineKeyboardMarkup
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from bot.db.models import DbConnection, FavoriteQuery
 
 MENU_TEXT_CONNECTIONS = "Подключения"
-MENU_TEXT_QUERY = "Запрос"
 MENU_TEXT_FAVORITES = "Избранное"
 MENU_TEXT_CURRENT = "Текущее подключение"
+MENU_TEXT_QUERY = "Запрос"
 
 MENU_TEXTS = frozenset(
     {
@@ -18,14 +18,13 @@ MENU_TEXTS = frozenset(
 )
 
 
-def main_menu_kb() -> ReplyKeyboardMarkup:
-    builder = ReplyKeyboardBuilder()
-    builder.button(text=MENU_TEXT_CONNECTIONS)
-    builder.button(text=MENU_TEXT_QUERY)
-    builder.button(text=MENU_TEXT_FAVORITES)
-    builder.button(text=MENU_TEXT_CURRENT)
-    builder.adjust(2, 2)
-    return builder.as_markup(resize_keyboard=True)
+def main_menu_kb() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=MENU_TEXT_CONNECTIONS, callback_data="menu:connections")
+    builder.button(text=MENU_TEXT_FAVORITES, callback_data="menu:favorites")
+    builder.button(text=MENU_TEXT_CURRENT, callback_data="menu:current")
+    builder.adjust(1)
+    return builder.as_markup()
 
 
 def cancel_kb() -> InlineKeyboardMarkup:
@@ -106,7 +105,6 @@ def query_result_kb(run_id: str | None, *, can_favorite: bool) -> InlineKeyboard
         builder.button(text="📥 Скачать CSV", callback_data=f"query:csv:{run_id}")
     if can_favorite:
         builder.button(text="⭐ В избранное", callback_data="query:fav")
-    builder.button(text="Новый запрос", callback_data="query:new")
     builder.adjust(1)
     return builder.as_markup()
 

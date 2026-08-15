@@ -4,6 +4,7 @@ import html
 import logging
 
 from aiogram import F, Router
+from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,46 +26,6 @@ from bot.states.forms import FavoriteForm, QueryForm
 
 router = Router(name="queries")
 logger = logging.getLogger(__name__)
-
-
-async def start_query_flow(
-    message: Message,
-    state: FSMContext,
-    session: AsyncSession,
-) -> None:
-    conn = await repo.get_active_connection(session, message.from_user.id)
-    if conn is None:
-        await state.clear()
-        await message.answer(
-            "Сначала выберите подключение в разделе «Подключения».",
-            reply_markup=main_menu_kb(),
-        )
-        return
-    await state.set_state(QueryForm.waiting_sql)
-    await message.answer(
-        f"Активное подключение: <b>{conn.name}</b> ({conn.db_type})\n"
-        "Отправьте SQL-запрос одним сообщением.",
-        reply_markup=cancel_kb(),
-    )
-
-
-@router.message(F.text == MENU_TEXT_QUERY)
-async def query_menu(
-    message: Message,
-    state: FSMContext,
-    session: AsyncSession,
-) -> None:
-    await start_query_flow(message, state, session)
-
-
-@router.callback_query(F.data == "query:new")
-async def query_new(
-    callback: CallbackQuery,
-    state: FSMContext,
-    session: AsyncSession,
-) -> None:
-    await start_query_flow(callback.message, state, session)
-    await callback.answer()
 
 
 async def _run_sql_and_reply(
@@ -131,6 +92,7 @@ async def _run_sql_and_reply(
     rich = build_result_rich_message(
         result.columns,
         result.rows,
+        connection_name=conn.name,
         preview_rows=settings.query_preview_rows,
         total_rows=total_rows,
     )
@@ -146,8 +108,18 @@ async def _run_sql_and_reply(
     await state.set_state(QueryForm.waiting_sql)
 
 
-@router.message(QueryForm.waiting_sql, F.text, ~F.text.in_(MENU_TEXTS))
-@router.message(QueryForm.editing_sql, F.text, ~F.text.in_(MENU_TEXTS))
+@router.message(F.text == MENU_TEXT_QUERY)
+async def legacy_query_button(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await message.answer("Просто отправьте SQL-запрос одним сообщением.")
+
+
+@router.message(
+    StateFilter(None, QueryForm.waiting_sql, QueryForm.editing_sql),
+    F.text,
+    ~F.text.startswith("/"),
+    ~F.text.in_(MENU_TEXTS),
+)
 async def receive_sql(
     message: Message,
     state: FSMContext,

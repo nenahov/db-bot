@@ -40,6 +40,20 @@ async def get_connection(
     return result
 
 
+async def get_connection_by_name(
+    session: AsyncSession,
+    user_id: int,
+    name: str,
+) -> DbConnection | None:
+    result = await session.scalar(
+        select(DbConnection).where(
+            DbConnection.user_id == user_id,
+            DbConnection.name == name,
+        )
+    )
+    return result
+
+
 async def create_connection(
     session: AsyncSession,
     *,
