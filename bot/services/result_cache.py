@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 class CachedResult:
     columns: list[str]
     rows: list[list[str]]
+    sql: str = ""
+    connection_id: int = 0
     created_at: float = field(default_factory=time.time)
     user_id: int = 0
 
@@ -25,12 +27,17 @@ class ResultCache:
         user_id: int,
         columns: list[str],
         rows: list[list[str]],
+        *,
+        sql: str,
+        connection_id: int,
     ) -> str:
         self.cleanup()
         run_id = uuid.uuid4().hex
         self._items[run_id] = CachedResult(
             columns=columns,
             rows=rows,
+            sql=sql,
+            connection_id=connection_id,
             user_id=user_id,
         )
         return run_id

@@ -21,6 +21,7 @@ def build_result_rich_message(
     connection_name: str,
     preview_rows: int,
     total_rows: int,
+    elapsed_ms: int,
 ) -> InputRichMessage:
     shown = rows[:preview_rows]
     header = "".join(f"<th>{_cell(col)}</th>" for col in columns)
@@ -39,7 +40,7 @@ def build_result_rich_message(
         truncated_note = "<p>Запрос выполнен, строк нет.</p>"
 
     content = (
-        f"<h3>Результат ({total_rows} строк)</h3>"
+        f"<h3>Результат ({total_rows} строк, {elapsed_ms} мс)</h3>"
         f"<p>Подключение: {html.escape(connection_name)}</p>"
         f"{truncated_note}"
         f"<table bordered><thead><tr>{header}</tr></thead>"

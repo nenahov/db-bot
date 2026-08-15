@@ -4,13 +4,15 @@ import html
 import logging
 
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import BufferedInputFile, CallbackQuery, Message
+from aiogram.types import BufferedInputFile, CallbackQuery, InputRichMessage, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.config import Settings
 from bot.db import repositories as repo
+from bot.db.models import DbConnection
 from bot.keyboards.common import (
     MENU_TEXT_QUERY,
     MENU_TEXTS,
@@ -19,13 +21,41 @@ from bot.keyboards.common import (
     query_result_kb,
 )
 from bot.services.crypto import PasswordCipher
-from bot.services.executors import execute_sql
+from bot.services.executors import QueryResult, execute_sql
 from bot.services.result_cache import ResultCache
 from bot.services.table_format import build_result_rich_message
 from bot.states.forms import FavoriteForm, QueryForm
 
 router = Router(name="queries")
 logger = logging.getLogger(__name__)
+
+
+def _store_table_result(
+    user_id: int,
+    *,
+    sql: str,
+    conn: DbConnection,
+    result: QueryResult,
+    settings: Settings,
+    result_cache: ResultCache,
+) -> tuple[str, InputRichMessage]:
+    run_id = result_cache.put(
+        user_id,
+        result.columns,
+        result.rows,
+        sql=sql,
+        connection_id=conn.id,
+    )
+    total_rows = result.rowcount if result.rowcount is not None else len(result.rows)
+    rich = build_result_rich_message(
+        result.columns,
+        result.rows,
+        connection_name=conn.name,
+        preview_rows=settings.query_preview_rows,
+        total_rows=total_rows,
+        elapsed_ms=result.elapsed_ms,
+    )
+    return run_id, rich
 
 
 async def _run_sql_and_reply(
@@ -83,18 +113,13 @@ async def _run_sql_and_reply(
         )
         return
 
-    run_id = result_cache.put(
+    run_id, rich = _store_table_result(
         message.from_user.id,
-        result.columns,
-        result.rows,
-    )
-    total_rows = result.rowcount if result.rowcount is not None else len(result.rows)
-    rich = build_result_rich_message(
-        result.columns,
-        result.rows,
-        connection_name=conn.name,
-        preview_rows=settings.query_preview_rows,
-        total_rows=total_rows,
+        sql=sql,
+        conn=conn,
+        result=result,
+        settings=settings,
+        result_cache=result_cache,
     )
     await status.delete()
     await message.answer_rich(
@@ -158,6 +183,71 @@ async def download_csv(
     await callback.message.answer_document(document)
     logger.info("user=%s download_csv run_id=%s", callback.from_user.id, run_id)
     await callback.answer()
+
+
+@router.callback_query(F.data.startswith("query:refresh:"))
+async def refresh_query(
+    callback: CallbackQuery,
+    session: AsyncSession,
+    cipher: PasswordCipher,
+    settings: Settings,
+    result_cache: ResultCache,
+) -> None:
+    run_id = callback.data.split(":")[-1]
+    item = result_cache.get(run_id, callback.from_user.id)
+    if item is None:
+        await callback.answer("Результат устарел. Выполните запрос снова.", show_alert=True)
+        return
+
+    conn = await repo.get_connection(
+        session, callback.from_user.id, item.connection_id
+    )
+    if conn is None:
+        await callback.answer("Подключение не найдено.", show_alert=True)
+        return
+
+    logger.info(
+        "user=%s refresh_query connection_id=%s sql=%s",
+        callback.from_user.id,
+        conn.id,
+        item.sql[:300].replace("\n", " "),
+    )
+    try:
+        result = await execute_sql(
+            conn,
+            cipher,
+            item.sql,
+            timeout_sec=settings.query_timeout_sec,
+            max_rows=settings.query_max_rows,
+        )
+    except Exception as exc:
+        logger.warning("user=%s refresh_failed: %s", callback.from_user.id, exc)
+        await callback.answer(
+            f"Ошибка выполнения: {exc}"[:200],
+            show_alert=True,
+        )
+        return
+
+    if not result.has_dataset:
+        await callback.answer("Запрос не вернул таблицу.", show_alert=True)
+        return
+
+    new_run_id, rich = _store_table_result(
+        callback.from_user.id,
+        sql=item.sql,
+        conn=conn,
+        result=result,
+        settings=settings,
+        result_cache=result_cache,
+    )
+    try:
+        await callback.message.edit_text(
+            rich_message=rich,
+            reply_markup=query_result_kb(new_run_id, can_favorite=True),
+        )
+    except TelegramBadRequest:
+        pass
+    await callback.answer(f"Обновлено за {result.elapsed_ms} мс")
 
 
 @router.callback_query(F.data == "query:fav")
