@@ -40,7 +40,7 @@ def build_result_rich_message(
     content = (
         f"<h3>Результат ({total_rows} строк)</h3>"
         f"{truncated_note}"
-        f"<table><thead><tr>{header}</tr></thead>"
+        f"<table bordered><thead><tr>{header}</tr></thead>"
         f"<tbody>{''.join(body_rows)}</tbody></table>"
     )
     return InputRichMessage(html=content)
