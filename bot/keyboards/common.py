@@ -3,10 +3,10 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from bot.db.models import DbConnection, FavoriteQuery
 
-MENU_TEXT_CONNECTIONS = "Подключения"
-MENU_TEXT_FAVORITES = "Избранное"
-MENU_TEXT_CURRENT = "Текущее подключение"
-MENU_TEXT_QUERY = "Запрос"
+MENU_TEXT_CONNECTIONS = "🔌 Подключения"
+MENU_TEXT_FAVORITES = "⭐ Избранное"
+MENU_TEXT_CURRENT = "📌 Текущее подключение"
+MENU_TEXT_QUERY = "📝 Запрос"
 
 MENU_TEXTS = frozenset(
     {
@@ -102,7 +102,7 @@ def db_type_kb() -> InlineKeyboardMarkup:
 def query_result_kb(run_id: str | None, *, can_favorite: bool) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     if run_id:
-        builder.button(text="Обновить", callback_data=f"query:refresh:{run_id}")
+        builder.button(text="🔄 Обновить", callback_data=f"query:refresh:{run_id}")
         builder.button(text="📥 Скачать CSV", callback_data=f"query:csv:{run_id}")
     if can_favorite:
         builder.button(text="⭐ В избранное", callback_data="query:fav")
