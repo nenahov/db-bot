@@ -138,11 +138,19 @@ def favorites_list_kb(
 def favorite_card_kb(favorite_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(
-        text="✏️ Редактировать и выполнить",
-        callback_data=f"fav:edit:{favorite_id}",
+        text="▶️ Выполнить",
+        callback_data=f"fav:run:{favorite_id}",
     )
     builder.button(text="🗑 Удалить", callback_data=f"fav:delete:{favorite_id}")
     builder.button(text="⬅️ Назад", callback_data="fav:menu")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def confirm_replace_favorite_kb() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Да, заменить", callback_data="query:fav:replace")
+    builder.button(text="Отмена", callback_data="cancel")
     builder.adjust(1)
     return builder.as_markup()
 

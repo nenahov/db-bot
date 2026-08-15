@@ -197,3 +197,29 @@ async def create_favorite(
 async def delete_favorite(session: AsyncSession, fav: FavoriteQuery) -> None:
     await session.delete(fav)
     await session.commit()
+
+
+async def get_favorite_by_title(
+    session: AsyncSession,
+    user_id: int,
+    connection_id: int,
+    title: str,
+) -> FavoriteQuery | None:
+    return await session.scalar(
+        select(FavoriteQuery).where(
+            FavoriteQuery.user_id == user_id,
+            FavoriteQuery.connection_id == connection_id,
+            FavoriteQuery.title == title,
+        )
+    )
+
+
+async def update_favorite_sql(
+    session: AsyncSession,
+    fav: FavoriteQuery,
+    sql_text: str,
+) -> FavoriteQuery:
+    fav.sql_text = sql_text
+    await session.commit()
+    await session.refresh(fav)
+    return fav

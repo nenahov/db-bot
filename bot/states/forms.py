@@ -14,8 +14,8 @@ class ConnectionForm(StatesGroup):
 
 class QueryForm(StatesGroup):
     waiting_sql = State()
-    editing_sql = State()
 
 
 class FavoriteForm(StatesGroup):
     waiting_title = State()
+    confirming_replace = State()

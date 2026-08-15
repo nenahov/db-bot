@@ -9,15 +9,17 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bot.config import Settings
 from bot.db import repositories as repo
+from bot.handlers.queries import _run_sql_and_reply
 from bot.keyboards.common import (
     MENU_TEXT_FAVORITES,
-    cancel_kb,
     favorite_card_kb,
     favorites_list_kb,
     favorites_menu_kb,
 )
-from bot.states.forms import QueryForm
+from bot.services.crypto import PasswordCipher
+from bot.services.result_cache import ResultCache
 
 router = Router(name="favorites")
 logger = logging.getLogger(__name__)
@@ -109,11 +111,14 @@ async def view_favorite(callback: CallbackQuery, session: AsyncSession) -> None:
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("fav:edit:"))
-async def edit_and_run_favorite(
+@router.callback_query(F.data.startswith("fav:run:") | F.data.startswith("fav:edit:"))
+async def run_favorite(
     callback: CallbackQuery,
     state: FSMContext,
     session: AsyncSession,
+    cipher: PasswordCipher,
+    settings: Settings,
+    result_cache: ResultCache,
 ) -> None:
     favorite_id = int(callback.data.split(":")[-1])
     fav = await repo.get_favorite(session, callback.from_user.id, favorite_id)
@@ -122,23 +127,23 @@ async def edit_and_run_favorite(
         return
 
     await repo.set_active_connection(session, callback.from_user.id, fav.connection_id)
-    await state.set_state(QueryForm.editing_sql)
-    await state.update_data(last_sql=fav.sql_text)
     logger.info(
-        "user=%s edit_favorite id=%s connection_id=%s",
+        "user=%s run_favorite id=%s connection_id=%s",
         callback.from_user.id,
         fav.id,
         fav.connection_id,
     )
-    conn_label = fav.connection.name if fav.connection else str(fav.connection_id)
-    await callback.message.answer(
-        "Подключение переключено на "
-        f"<b>{html.escape(conn_label)}</b>.\n"
-        "Отредактируйте SQL и отправьте сообщение для выполнения:\n\n"
-        f"<pre>{html.escape(fav.sql_text)}</pre>",
-        reply_markup=cancel_kb(),
+    await callback.answer("Выполняю…")
+    await _run_sql_and_reply(
+        callback.message,
+        user_id=callback.from_user.id,
+        sql=fav.sql_text,
+        session=session,
+        state=state,
+        cipher=cipher,
+        settings=settings,
+        result_cache=result_cache,
     )
-    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("fav:delete:"))

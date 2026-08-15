@@ -17,6 +17,7 @@ from bot.keyboards.common import (
     MENU_TEXT_QUERY,
     MENU_TEXTS,
     cancel_kb,
+    confirm_replace_favorite_kb,
     main_menu_kb,
     query_result_kb,
 )
@@ -61,6 +62,7 @@ def _store_table_result(
 async def _run_sql_and_reply(
     message: Message,
     *,
+    user_id: int,
     sql: str,
     session: AsyncSession,
     state: FSMContext,
@@ -68,7 +70,7 @@ async def _run_sql_and_reply(
     settings: Settings,
     result_cache: ResultCache,
 ) -> None:
-    conn = await repo.get_active_connection(session, message.from_user.id)
+    conn = await repo.get_active_connection(session, user_id)
     if conn is None:
         await state.clear()
         await message.answer(
@@ -81,7 +83,7 @@ async def _run_sql_and_reply(
     status = await message.answer("Выполняю запрос…")
     logger.info(
         "user=%s run_query connection_id=%s sql=%s",
-        message.from_user.id,
+        user_id,
         conn.id,
         sql[:300].replace("\n", " "),
     )
@@ -95,7 +97,7 @@ async def _run_sql_and_reply(
             max_rows=settings.query_max_rows,
         )
     except Exception as exc:
-        logger.warning("user=%s query_failed: %s", message.from_user.id, exc)
+        logger.warning("user=%s query_failed: %s", user_id, exc)
         await status.edit_text(
             f"Ошибка выполнения:\n<code>{html.escape(str(exc))}</code>"
         )
@@ -114,7 +116,7 @@ async def _run_sql_and_reply(
         return
 
     run_id, rich = _store_table_result(
-        message.from_user.id,
+        user_id,
         sql=sql,
         conn=conn,
         result=result,
@@ -140,7 +142,7 @@ async def legacy_query_button(message: Message, state: FSMContext) -> None:
 
 
 @router.message(
-    StateFilter(None, QueryForm.waiting_sql, QueryForm.editing_sql),
+    StateFilter(None, QueryForm.waiting_sql),
     F.text,
     ~F.text.startswith("/"),
     ~F.text.in_(MENU_TEXTS),
@@ -159,6 +161,7 @@ async def receive_sql(
         return
     await _run_sql_and_reply(
         message,
+        user_id=message.from_user.id,
         sql=sql,
         session=session,
         state=state,
@@ -250,6 +253,38 @@ async def refresh_query(
     await callback.answer(f"Обновлено за {result.elapsed_ms} мс")
 
 
+async def _prompt_replace_favorite(
+    message: Message,
+    state: FSMContext,
+    *,
+    title: str,
+    favorite_id: int,
+) -> None:
+    await state.update_data(replace_favorite_id=favorite_id)
+    await state.set_state(FavoriteForm.confirming_replace)
+    await message.answer(
+        f"В избранном уже есть запрос «{html.escape(title)}» "
+        "для этого подключения. Заменить его новым SQL?",
+        reply_markup=confirm_replace_favorite_kb(),
+    )
+
+
+async def _finish_favorite_saved(
+    message: Message,
+    state: FSMContext,
+    title: str,
+    *,
+    user_id: int,
+) -> None:
+    await state.set_state(QueryForm.waiting_sql)
+    logger.info("user=%s add_favorite title=%s", user_id, title)
+    await message.answer(
+        f"Сохранено в избранное: «{html.escape(title)}».\n"
+        "Можете отправить следующий SQL.",
+        reply_markup=main_menu_kb(),
+    )
+
+
 @router.callback_query(F.data == "query:fav")
 async def save_favorite_start(callback: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
@@ -287,6 +322,21 @@ async def save_favorite_title(
         )
         return
 
+    existing = await repo.get_favorite_by_title(
+        session,
+        message.from_user.id,
+        conn.id,
+        title,
+    )
+    if existing is not None:
+        await _prompt_replace_favorite(
+            message,
+            state,
+            title=title,
+            favorite_id=existing.id,
+        )
+        return
+
     try:
         fav = await repo.create_favorite(
             session,
@@ -299,9 +349,58 @@ async def save_favorite_title(
         await message.answer(f"Не удалось сохранить: {exc}")
         return
 
+    await _finish_favorite_saved(
+        message,
+        state,
+        fav.title,
+        user_id=message.from_user.id,
+    )
+
+
+@router.callback_query(
+    FavoriteForm.confirming_replace,
+    F.data == "query:fav:replace",
+)
+async def replace_favorite_confirm(
+    callback: CallbackQuery,
+    state: FSMContext,
+    session: AsyncSession,
+) -> None:
+    data = await state.get_data()
+    sql = data.get("last_sql")
+    favorite_id = data.get("replace_favorite_id")
+    if not sql or favorite_id is None:
+        await state.clear()
+        await callback.answer("Не удалось заменить запрос.", show_alert=True)
+        return
+
+    fav = await repo.get_favorite(session, callback.from_user.id, favorite_id)
+    if fav is None:
+        await state.set_state(QueryForm.waiting_sql)
+        await callback.answer("Избранное не найдено.", show_alert=True)
+        return
+
+    await repo.update_favorite_sql(session, fav, sql)
+    logger.info(
+        "user=%s replace_favorite id=%s",
+        callback.from_user.id,
+        fav.id,
+    )
     await state.set_state(QueryForm.waiting_sql)
-    logger.info("user=%s add_favorite id=%s", message.from_user.id, fav.id)
+    text = (
+        f"Запрос «{html.escape(fav.title)}» в избранном заменён.\n"
+        "Можете отправить следующий SQL."
+    )
+    try:
+        await callback.message.edit_text(text, reply_markup=main_menu_kb())
+    except TelegramBadRequest:
+        await callback.message.answer(text, reply_markup=main_menu_kb())
+    await callback.answer()
+
+
+@router.message(FavoriteForm.confirming_replace, ~F.text.in_(MENU_TEXTS))
+async def replace_favorite_need_confirm(message: Message) -> None:
     await message.answer(
-        f"Сохранено в избранное: «{fav.title}».\nМожете отправить следующий SQL.",
-        reply_markup=main_menu_kb(),
+        "Подтвердите замену кнопками ниже или нажмите «Отмена».",
+        reply_markup=confirm_replace_favorite_kb(),
     )
