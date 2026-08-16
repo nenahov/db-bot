@@ -9,6 +9,7 @@ class ConnectionForm(StatesGroup):
     database = State()
     username = State()
     password = State()
+    read_only = State()
     edit_field_value = State()
 
 

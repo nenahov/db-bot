@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from bot.db.models import DbType
 
 CARD_MARKERS = ("Тип:", "Хост:", "БД:", "Пользователь:")
-_FIELD_PREFIXES = (*CARD_MARKERS, "Пароль:", "Активно:")
+_FIELD_PREFIXES = (*CARD_MARKERS, "Пароль:", "Активно:", "Режим SQL:")
 
 DEFAULT_PORTS = {
     DbType.POSTGRES: 5432,
@@ -25,6 +25,7 @@ class ParsedConnectionCard:
     port: int
     database: str
     username: str
+    read_only: bool = True
 
 
 def looks_like_connection_card(text: str) -> bool:
@@ -80,7 +81,32 @@ def parse_connection_card(text: str) -> ParsedConnectionCard:
         port=port,
         database=database,
         username=username,
+        read_only=_parse_read_only_mode(fields.get("Режим SQL:")),
     )
+
+
+def _parse_read_only_mode(raw: str | None) -> bool:
+    if raw is None or not raw.strip():
+        return True
+    value = raw.strip().lower()
+    write_values = {
+        "чтение и запись",
+        "запись",
+        "read/write",
+        "read-write",
+        "rw",
+        "write",
+        "нет",
+        "no",
+        "off",
+        "0",
+        "false",
+    }
+    if value in write_values:
+        return False
+    if "запись" in value and "только" not in value:
+        return False
+    return True
 
 
 def _split_host_port(host_raw: str, db_type: DbType) -> tuple[str, int]:

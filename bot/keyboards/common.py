@@ -37,13 +37,19 @@ def connections_list_kb(connections: list[DbConnection]) -> InlineKeyboardMarkup
     builder = InlineKeyboardBuilder()
     for conn in connections:
         builder.button(
-            text=f"{conn.name} ({conn.db_type})",
+            text=f"{_connection_list_label(conn)} ({conn.db_type})",
             callback_data=f"conn:view:{conn.id}",
         )
     builder.button(text="➕ Добавить", callback_data="conn:add")
     builder.button(text="⬅️ В меню", callback_data="menu:home")
     builder.adjust(1)
     return builder.as_markup()
+
+
+def _connection_list_label(conn: DbConnection) -> str:
+    if conn.read_only:
+        return f"🔒 {conn.name}"
+    return conn.name
 
 
 def connection_card_kb(connection_id: int, is_active: bool) -> InlineKeyboardMarkup:
@@ -69,6 +75,7 @@ def connection_edit_fields_kb(connection_id: int) -> InlineKeyboardMarkup:
         ("password", "Пароль"),
         ("port", "Порт"),
         ("name", "Название"),
+        ("read_only", "Режим SQL"),
     ):
         builder.button(
             text=title,
@@ -159,5 +166,31 @@ def skip_default_port_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="Оставить по умолчанию", callback_data="conn:port:default")
     builder.button(text="Отмена", callback_data="cancel")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def read_only_choice_kb() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔒 Только чтение", callback_data="conn:readonly:1")
+    builder.button(text="✏️ Чтение и запись", callback_data="conn:readonly:0")
+    builder.button(text="Отмена", callback_data="cancel")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def read_only_edit_kb(connection_id: int, read_only: bool) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    ro_mark = " ✓" if read_only else ""
+    rw_mark = " ✓" if not read_only else ""
+    builder.button(
+        text=f"🔒 Только чтение{ro_mark}",
+        callback_data=f"conn:setreadonly:{connection_id}:1",
+    )
+    builder.button(
+        text=f"✏️ Чтение и запись{rw_mark}",
+        callback_data=f"conn:setreadonly:{connection_id}:0",
+    )
+    builder.button(text="⬅️ Назад", callback_data=f"conn:edit:{connection_id}")
     builder.adjust(1)
     return builder.as_markup()

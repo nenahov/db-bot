@@ -65,6 +65,7 @@ async def create_connection(
     database: str,
     username: str,
     password_encrypted: str,
+    read_only: bool = True,
 ) -> DbConnection:
     conn = DbConnection(
         user_id=user_id,
@@ -75,6 +76,7 @@ async def create_connection(
         database=database,
         username=username,
         password_encrypted=password_encrypted,
+        read_only=read_only,
     )
     session.add(conn)
     await session.commit()

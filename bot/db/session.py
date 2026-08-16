@@ -1,6 +1,8 @@
 from collections.abc import AsyncIterator
 from pathlib import Path
 
+from sqlalchemy import inspect, text
+from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -35,7 +37,25 @@ async def init_db(sqlite_path: Path) -> None:
     _session_factory = async_sessionmaker(_engine, expire_on_commit=False)
 
     async with _engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(_ensure_schema)
+
+
+def _ensure_schema(sync_conn: Connection) -> None:
+    Base.metadata.create_all(sync_conn)
+    columns = {
+        col["name"] for col in inspect(sync_conn).get_columns("db_connections")
+    }
+    if "read_only" not in columns:
+        sync_conn.execute(
+            text(
+                "ALTER TABLE db_connections "
+                "ADD COLUMN read_only BOOLEAN NOT NULL DEFAULT 1"
+            )
+        )
+    version = int(sync_conn.execute(text("PRAGMA user_version")).scalar() or 0)
+    if version < 1:
+        sync_conn.execute(text("UPDATE db_connections SET read_only = 1"))
+        sync_conn.exec_driver_sql("PRAGMA user_version = 1")
 
 
 async def close_db() -> None:

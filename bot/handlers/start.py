@@ -23,7 +23,8 @@ def _current_connection_text(conn: DbConnection) -> str:
         "Текущее подключение:\n"
         f"• {conn.name} ({conn.db_type})\n"
         f"• {conn.host}:{conn.port}/{conn.database}\n"
-        f"• user: {conn.username}"
+        f"• user: {conn.username}\n"
+        f"• режим: {conn.sql_mode_label}"
     )
 
 

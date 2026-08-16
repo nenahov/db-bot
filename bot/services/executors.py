@@ -64,6 +64,18 @@ async def execute_sql(
     raise ValueError(f"Неизвестный тип БД: {conn.db_type}")
 
 
+def _postgres_server_settings(conn: DbConnection) -> dict[str, str] | None:
+    if conn.read_only:
+        return {"default_transaction_read_only": "on"}
+    return None
+
+
+def _clickhouse_settings(conn: DbConnection) -> dict[str, int]:
+    if conn.read_only:
+        return {"readonly": 1}
+    return {}
+
+
 async def _execute_postgres(
     conn: DbConnection,
     password: str,
@@ -80,8 +92,11 @@ async def _execute_postgres(
         password=password,
         database=conn.database,
         timeout=timeout_sec,
+        server_settings=_postgres_server_settings(conn),
     )
     try:
+        if conn.read_only:
+            await connection.execute("SET default_transaction_read_only TO on")
         statement = await connection.prepare(sql)
         columns = [attr.name for attr in statement.get_attributes()]
         if columns:
@@ -144,6 +159,7 @@ async def _execute_clickhouse(
             database=conn.database,
             connect_timeout=timeout_sec,
             send_receive_timeout=timeout_sec,
+            settings=_clickhouse_settings(conn),
         )
         try:
             result = client.query(sql)

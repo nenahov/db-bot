@@ -6,6 +6,7 @@ from typing import Optional
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     DateTime,
     ForeignKey,
     Integer,
@@ -76,6 +77,12 @@ class DbConnection(Base):
     database: Mapped[str] = mapped_column(String(255), nullable=False)
     username: Mapped[str] = mapped_column(String(255), nullable=False)
     password_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    read_only: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="1",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -96,6 +103,10 @@ class DbConnection(Base):
         back_populates="connection",
         cascade="all, delete-orphan",
     )
+
+    @property
+    def sql_mode_label(self) -> str:
+        return "только чтение" if self.read_only else "чтение и запись"
 
 
 class FavoriteQuery(Base):
