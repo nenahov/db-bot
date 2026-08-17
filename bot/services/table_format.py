@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+from datetime import datetime
 
 from aiogram.types import InputRichMessage
 
@@ -39,9 +40,11 @@ def build_result_rich_message(
     elif total_rows == 0:
         truncated_note = "<p>Запрос выполнен, строк нет.</p>"
 
+    executed_at = datetime.now().astimezone().strftime("%d.%m.%Y %H:%M:%S")
     content = (
         f"<h3>Результат ({total_rows} строк, {elapsed_ms} мс)</h3>"
         f"<p>Подключение: {html.escape(connection_name)}</p>"
+        f"<p>Выполнено: {executed_at}</p>"
         f"{truncated_note}"
         f"<table bordered><thead><tr>{header}</tr></thead>"
         f"<tbody>{''.join(body_rows)}</tbody></table>"
