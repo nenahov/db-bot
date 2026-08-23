@@ -12,8 +12,10 @@ from bot.db.session import close_db, get_session_factory, init_db
 from bot.handlers import setup_routers
 from bot.logging_setup import setup_logging
 from bot.middlewares.action_log import ActionLogMiddleware
+from bot.middlewares.auth import AuthMiddleware
 from bot.middlewares.db import DbSessionMiddleware
 from bot.services.crypto import PasswordCipher
+from bot.services.membership import MembershipCache
 from bot.services.result_cache import ResultCache
 
 logger = logging.getLogger(__name__)
@@ -33,9 +35,11 @@ async def main() -> None:
 
     cipher = PasswordCipher(settings.encryption_key)
     result_cache = ResultCache(settings.result_cache_ttl_sec)
+    membership_cache = MembershipCache(settings.auth_cache_ttl_sec)
 
     session_factory = get_session_factory()
     dp.update.middleware(ActionLogMiddleware())
+    dp.update.middleware(AuthMiddleware())
     dp.update.middleware(DbSessionMiddleware(session_factory))
 
     dp.include_router(setup_routers())
@@ -57,6 +61,7 @@ async def main() -> None:
             settings=settings,
             cipher=cipher,
             result_cache=result_cache,
+            membership_cache=membership_cache,
         )
     finally:
         await close_db()

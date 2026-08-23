@@ -22,6 +22,19 @@ class Settings(BaseSettings):
     query_timeout_sec: int = Field(default=60, alias="QUERY_TIMEOUT_SEC")
     result_cache_ttl_sec: int = Field(default=3600, alias="RESULT_CACHE_TTL_SEC")
     log_dir: Path = Field(default=BASE_DIR / "logs", alias="LOG_DIR")
+    auth_group_ids_raw: str = Field(default="", alias="AUTH_GROUP_IDS")
+    auth_subscribe_count: int = Field(default=1, alias="AUTH_SUBSCRIBE_COUNT")
+    auth_cache_ttl_sec: int = Field(default=36_000, alias="AUTH_CACHE_TTL_SEC")
+
+    @property
+    def auth_group_ids(self) -> list[int]:
+        if not self.auth_group_ids_raw.strip():
+            return []
+        return [
+            int(part.strip())
+            for part in self.auth_group_ids_raw.split(",")
+            if part.strip()
+        ]
 
 
 @lru_cache

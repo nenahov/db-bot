@@ -33,6 +33,15 @@ def cancel_kb() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def subscribe_gate_kb(subscribe_buttons: list[tuple[str, str]]) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for text, url in subscribe_buttons:
+        builder.button(text=text, url=url)
+    builder.button(text="Проверить подписку", callback_data="auth:check")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
 def connections_list_kb(connections: list[DbConnection]) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for conn in connections:
