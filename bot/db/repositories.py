@@ -142,6 +142,7 @@ async def list_favorites_for_connection(
             FavoriteQuery.user_id == user_id,
             FavoriteQuery.connection_id == connection_id,
         )
+        .options(selectinload(FavoriteQuery.connection))
         .order_by(FavoriteQuery.title)
     )
     return list(result)

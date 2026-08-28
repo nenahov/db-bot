@@ -1,8 +1,6 @@
 from aiogram.types import InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from bot.db.models import FavoriteQuery
-
 MENU_TEXT_CONNECTIONS = "🔌 Подключения"
 MENU_TEXT_FAVORITES = "⭐ Избранное"
 MENU_TEXT_QUERY = "📝 Запрос"
@@ -64,6 +62,7 @@ def confirm_delete_kb(connection_id: int) -> InlineKeyboardMarkup:
     builder.button(
         text="Да, удалить",
         callback_data=f"conn:delete_confirm:{connection_id}",
+        style="danger",
     )
     builder.button(text="Отмена", callback_data=f"conn:view:{connection_id}")
     builder.adjust(1)
@@ -85,57 +84,6 @@ def query_result_kb(run_id: str | None, *, can_favorite: bool) -> InlineKeyboard
         builder.button(text="📥 Скачать CSV", callback_data=f"query:csv:{run_id}")
     if can_favorite:
         builder.button(text="⭐ В избранное", callback_data="query:fav")
-    builder.adjust(1)
-    return builder.as_markup()
-
-
-def favorites_menu_kb() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.button(text="По текущему подключению", callback_data="fav:list:active")
-    builder.button(text="Все избранные", callback_data="fav:list:all")
-    builder.adjust(1)
-    return builder.as_markup()
-
-
-def favorites_list_kb(
-    favorites: list[FavoriteQuery],
-    *,
-    show_connection_name: bool,
-) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    for fav in favorites:
-        label = fav.title
-        if show_connection_name and fav.connection is not None:
-            label = f"{fav.title} [{fav.connection.name}]"
-        builder.button(text=label, callback_data=f"fav:view:{fav.id}")
-    builder.button(text="⬅️ Назад", callback_data="fav:menu")
-    builder.adjust(1)
-    return builder.as_markup()
-
-
-def favorite_card_kb(favorite_id: int) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.button(
-        text="▶️ Выполнить",
-        callback_data=f"fav:run:{favorite_id}",
-    )
-    builder.button(text="🗑 Удалить", callback_data=f"fav:delete:{favorite_id}")
-    builder.button(text="⬅️ Назад", callback_data="fav:menu")
-    builder.adjust(1)
-    return builder.as_markup()
-
-
-def favorite_connection_choice_kb(favorite_id: int) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.button(
-        text="Переключиться",
-        callback_data=f"fav:switch:{favorite_id}",
-    )
-    builder.button(
-        text="Оставить текущее",
-        callback_data=f"fav:keep:{favorite_id}",
-    )
-    builder.button(text="⬅️ Назад", callback_data="fav:list:all")
     builder.adjust(1)
     return builder.as_markup()
 
