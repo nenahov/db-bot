@@ -50,7 +50,6 @@ async def main() -> None:
             BotCommand(command="menu", description="Главное меню"),
             BotCommand(command="connections", description="Подключения"),
             BotCommand(command="favorites", description="Избранное"),
-            BotCommand(command="current", description="Текущее подключение"),
         ]
     )
 

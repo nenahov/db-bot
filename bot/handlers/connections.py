@@ -19,7 +19,6 @@ from bot.keyboards.common import (
     MENU_TEXTS,
     cancel_kb,
     confirm_delete_kb,
-    connection_card_kb,
     connection_edit_fields_kb,
     connections_list_kb,
     db_type_kb,
@@ -35,6 +34,10 @@ from bot.services.connection_card import (
 )
 from bot.services.crypto import PasswordCipher
 from bot.services.executors import test_connection
+from bot.services.table_format import (
+    build_connection_card_rich_message,
+    build_connections_list_rich_message,
+)
 from bot.states.forms import ConnectionForm
 
 router = Router(name="connections")
@@ -51,22 +54,66 @@ class IsConnectionCard(Filter):
         return looks_like_connection_card(message.text or "")
 
 
-def format_connection_card(conn: DbConnection, is_active: bool) -> str:
-    active = "да" if is_active else "нет"
-    return (
-        f"<b>{html.escape(conn.name)}</b>\n"
-        f"Тип: <code>{html.escape(conn.db_type)}</code>\n"
-        f"Хост: <code>{html.escape(conn.host)}:{conn.port}</code>\n"
-        f"БД: <code>{html.escape(conn.database)}</code>\n"
-        f"Пользователь: <code>{html.escape(conn.username)}</code>\n"
-        f"Пароль: <code>••••</code>\n"
-        f"Режим SQL: {html.escape(conn.sql_mode_label)}\n"
-        f"Активно: {active}"
-    )
-
-
 def _sql_mode_label(read_only: bool) -> str:
     return "только чтение" if read_only else "чтение и запись"
+
+
+async def _show_connection_card(
+    message: Message,
+    conn: DbConnection,
+    *,
+    is_active: bool,
+    edit: bool = False,
+    notice: str | None = None,
+) -> None:
+    rich = build_connection_card_rich_message(
+        conn,
+        is_active=is_active,
+        notice=notice,
+    )
+    if edit:
+        try:
+            await message.edit_text(rich_message=rich)
+            return
+        except TelegramBadRequest:
+            pass
+    await message.answer_rich(rich_message=rich)
+
+
+async def _show_connections_list(
+    message: Message,
+    session: AsyncSession,
+    user_id: int,
+    *,
+    edit: bool = False,
+    notice: str | None = None,
+) -> None:
+    connections = await repo.list_connections(session, user_id)
+    user = await repo.get_or_create_user(session, user_id)
+    rich = build_connections_list_rich_message(
+        connections,
+        active_id=user.active_connection_id,
+        notice=notice,
+    )
+    markup = connections_list_kb()
+    if edit:
+        try:
+            await message.edit_text(rich_message=rich, reply_markup=markup)
+            return
+        except TelegramBadRequest:
+            pass
+    await message.answer_rich(rich_message=rich, reply_markup=markup)
+
+
+async def _edit_or_answer(
+    callback: CallbackQuery,
+    text: str,
+    reply_markup=None,
+) -> None:
+    try:
+        await callback.message.edit_text(text, reply_markup=reply_markup)
+    except TelegramBadRequest:
+        await callback.message.answer(text, reply_markup=reply_markup)
 
 
 @router.message(
@@ -104,9 +151,7 @@ async def import_connection_card(message: Message, state: FSMContext) -> None:
 @router.message(F.text == MENU_TEXT_CONNECTIONS)
 async def list_connections_msg(message: Message, session: AsyncSession, state: FSMContext) -> None:
     await state.clear()
-    connections = await repo.list_connections(session, message.from_user.id)
-    text = "Выберите подключение:" if connections else "Подключений пока нет. Добавьте первое."
-    await message.answer(text, reply_markup=connections_list_kb(connections))
+    await _show_connections_list(message, session, message.from_user.id)
 
 
 @router.callback_query(F.data.in_({"conn:list", "menu:connections"}))
@@ -116,12 +161,12 @@ async def list_connections_cb(
     state: FSMContext,
 ) -> None:
     await state.clear()
-    connections = await repo.list_connections(session, callback.from_user.id)
-    text = "Выберите подключение:" if connections else "Подключений пока нет. Добавьте первое."
-    try:
-        await callback.message.edit_text(text, reply_markup=connections_list_kb(connections))
-    except TelegramBadRequest:
-        await callback.message.answer(text, reply_markup=connections_list_kb(connections))
+    await _show_connections_list(
+        callback.message,
+        session,
+        callback.from_user.id,
+        edit=True,
+    )
     await callback.answer()
 
 
@@ -134,9 +179,11 @@ async def view_connection(callback: CallbackQuery, session: AsyncSession) -> Non
         return
     user = await repo.get_or_create_user(session, callback.from_user.id)
     is_active = user.active_connection_id == conn.id
-    await callback.message.edit_text(
-        format_connection_card(conn, is_active),
-        reply_markup=connection_card_kb(conn.id, is_active),
+    await _show_connection_card(
+        callback.message,
+        conn,
+        is_active=is_active,
+        edit=True,
     )
     await callback.answer()
 
@@ -150,9 +197,11 @@ async def activate_connection(callback: CallbackQuery, session: AsyncSession) ->
         return
     await repo.set_active_connection(session, callback.from_user.id, conn.id)
     logger.info("user=%s activate_connection id=%s", callback.from_user.id, conn.id)
-    await callback.message.edit_text(
-        format_connection_card(conn, True),
-        reply_markup=connection_card_kb(conn.id, True),
+    await _show_connection_card(
+        callback.message,
+        conn,
+        is_active=True,
+        edit=True,
     )
     await callback.answer("Подключение выбрано")
 
@@ -161,7 +210,7 @@ async def activate_connection(callback: CallbackQuery, session: AsyncSession) ->
 async def add_connection_start(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await state.set_state(ConnectionForm.db_type)
-    await callback.message.edit_text("Выберите тип БД:", reply_markup=db_type_kb())
+    await _edit_or_answer(callback, "Выберите тип БД:", db_type_kb())
     await callback.answer()
 
 
@@ -399,10 +448,12 @@ async def _persist_draft_connection(
     await repo.set_active_connection(session, user_id, conn.id)
     await state.clear()
     logger.info("user=%s save_connection id=%s", user_id, conn.id)
-    await status_message.edit_text(
-        f"Подключение {saved_as} и выбрано как активное.\n\n"
-        + format_connection_card(conn, True),
-        reply_markup=connection_card_kb(conn.id, True),
+    await _show_connection_card(
+        status_message,
+        conn,
+        is_active=True,
+        edit=True,
+        notice=f"Подключение {saved_as} и выбрано как активное.",
     )
 
 
@@ -413,9 +464,10 @@ async def edit_connection_menu(callback: CallbackQuery, session: AsyncSession) -
     if conn is None:
         await callback.answer("Не найдено", show_alert=True)
         return
-    await callback.message.edit_text(
+    await _edit_or_answer(
+        callback,
         "Что изменить?",
-        reply_markup=connection_edit_fields_kb(conn.id),
+        connection_edit_fields_kb(conn.id),
     )
     await callback.answer()
 
@@ -514,10 +566,11 @@ async def edit_field_value(
         connection_id,
         field,
     )
-    await message.answer(
-        f"Обновлено.\n{test_note}\n\n"
-        + format_connection_card(conn, user.active_connection_id == conn.id),
-        reply_markup=connection_card_kb(conn.id, user.active_connection_id == conn.id),
+    await _show_connection_card(
+        message,
+        conn,
+        is_active=user.active_connection_id == conn.id,
+        notice=f"Обновлено.\n{test_note}",
     )
 
 
@@ -538,9 +591,11 @@ async def set_read_only(callback: CallbackQuery, session: AsyncSession) -> None:
         connection_id,
         conn.read_only,
     )
-    await callback.message.edit_text(
-        format_connection_card(conn, is_active),
-        reply_markup=connection_card_kb(conn.id, is_active),
+    await _show_connection_card(
+        callback.message,
+        conn,
+        is_active=is_active,
+        edit=True,
     )
     await callback.answer("Режим обновлён")
 
@@ -552,10 +607,11 @@ async def delete_connection_ask(callback: CallbackQuery, session: AsyncSession) 
     if conn is None:
         await callback.answer("Не найдено", show_alert=True)
         return
-    await callback.message.edit_text(
+    await _edit_or_answer(
+        callback,
         f"Удалить подключение «{html.escape(conn.name)}»? "
         "Избранные запросы этой БД тоже будут удалены.",
-        reply_markup=confirm_delete_kb(conn.id),
+        confirm_delete_kb(conn.id),
     )
     await callback.answer()
 
@@ -573,9 +629,11 @@ async def delete_connection_confirm(
     name = conn.name
     await repo.delete_connection(session, conn)
     logger.info("user=%s delete_connection id=%s", callback.from_user.id, connection_id)
-    connections = await repo.list_connections(session, callback.from_user.id)
-    await callback.message.edit_text(
-        f"Подключение «{name}» удалено.",
-        reply_markup=connections_list_kb(connections),
+    await _show_connections_list(
+        callback.message,
+        session,
+        callback.from_user.id,
+        edit=True,
+        notice=f"Подключение «{name}» удалено.",
     )
     await callback.answer()

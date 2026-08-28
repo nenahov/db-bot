@@ -55,6 +55,7 @@ def _store_table_result(
         preview_rows=settings.query_preview_rows,
         total_rows=total_rows,
         elapsed_ms=result.elapsed_ms,
+        run_id=run_id,
     )
     return run_id, rich
 

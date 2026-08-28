@@ -1,11 +1,10 @@
 from aiogram.types import InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from bot.db.models import DbConnection, FavoriteQuery
+from bot.db.models import FavoriteQuery
 
 MENU_TEXT_CONNECTIONS = "🔌 Подключения"
 MENU_TEXT_FAVORITES = "⭐ Избранное"
-MENU_TEXT_CURRENT = "📌 Текущее подключение"
 MENU_TEXT_QUERY = "📝 Запрос"
 
 MENU_TEXTS = frozenset(
@@ -13,7 +12,6 @@ MENU_TEXTS = frozenset(
         MENU_TEXT_CONNECTIONS,
         MENU_TEXT_QUERY,
         MENU_TEXT_FAVORITES,
-        MENU_TEXT_CURRENT,
     }
 )
 
@@ -22,7 +20,6 @@ def main_menu_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text=MENU_TEXT_CONNECTIONS, callback_data="menu:connections")
     builder.button(text=MENU_TEXT_FAVORITES, callback_data="menu:favorites")
-    builder.button(text=MENU_TEXT_CURRENT, callback_data="menu:current")
     builder.adjust(1)
     return builder.as_markup()
 
@@ -42,36 +39,9 @@ def subscribe_gate_kb(subscribe_buttons: list[tuple[str, str]]) -> InlineKeyboar
     return builder.as_markup()
 
 
-def connections_list_kb(connections: list[DbConnection]) -> InlineKeyboardMarkup:
+def connections_list_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    for conn in connections:
-        builder.button(
-            text=f"{_connection_list_label(conn)} ({conn.db_type})",
-            callback_data=f"conn:view:{conn.id}",
-        )
-    builder.button(text="➕ Добавить", callback_data="conn:add")
     builder.button(text="⬅️ В меню", callback_data="menu:home")
-    builder.adjust(1)
-    return builder.as_markup()
-
-
-def _connection_list_label(conn: DbConnection) -> str:
-    if conn.read_only:
-        return f"🔒 {conn.name}"
-    return conn.name
-
-
-def connection_card_kb(connection_id: int, is_active: bool) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    if not is_active:
-        builder.button(
-            text="Подключиться",
-            callback_data=f"conn:activate:{connection_id}",
-        )
-    builder.button(text="Изменить", callback_data=f"conn:edit:{connection_id}")
-    builder.button(text="Удалить", callback_data=f"conn:delete:{connection_id}")
-    builder.button(text="⬅️ К списку", callback_data="conn:list")
-    builder.adjust(1)
     return builder.as_markup()
 
 
@@ -118,7 +88,6 @@ def db_type_kb() -> InlineKeyboardMarkup:
 def query_result_kb(run_id: str | None, *, can_favorite: bool) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     if run_id:
-        builder.button(text="🔄 Обновить", callback_data=f"query:refresh:{run_id}")
         builder.button(text="📥 Скачать CSV", callback_data=f"query:csv:{run_id}")
     if can_favorite:
         builder.button(text="⭐ В избранное", callback_data="query:fav")
