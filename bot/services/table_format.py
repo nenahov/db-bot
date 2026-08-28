@@ -140,13 +140,12 @@ def build_connection_card_rich_message(
         buttons += (
             '<tg-button-row align="center">'
             f'<tg-button type="callback_data" data="conn:activate:{conn.id}" '
-            'style="success">Подключиться</tg-button>'
+            'style="primary">Подключиться</tg-button>'
             "</tg-button-row>"
         )
     buttons += (
         '<tg-button-row align="center">'
-        f'<tg-button type="callback_data" data="conn:edit:{conn.id}" '
-        'style="primary">Изменить</tg-button>'
+        f'<tg-button type="callback_data" data="conn:edit:{conn.id}">Изменить</tg-button>'
         f'<tg-button type="callback_data" data="conn:delete:{conn.id}" '
         'style="danger">Удалить</tg-button>'
         "</tg-button-row>"
