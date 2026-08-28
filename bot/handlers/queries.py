@@ -30,6 +30,41 @@ from bot.states.forms import FavoriteForm, QueryForm
 router = Router(name="queries")
 logger = logging.getLogger(__name__)
 
+_TELEGRAM_RESULT_ERRORS = {
+    "RICH_MESSAGE_TABLE_COLS_TOO_MANY": (
+        "Не удалось показать таблицу: слишком много колонок "
+        "(ограничение Telegram). Сократите SELECT или скачайте CSV."
+    ),
+    "RICH_MESSAGE_TABLE_ROWS_TOO_MANY": (
+        "Не удалось показать таблицу: слишком много строк "
+        "(ограничение Telegram). Скачайте CSV."
+    ),
+}
+
+
+def _query_error_text(exc: BaseException) -> str:
+    raw = str(exc)
+    for code, message in _TELEGRAM_RESULT_ERRORS.items():
+        if code in raw:
+            return message
+    if "MESSAGE_TOO_LONG" in raw or "RICH_MESSAGE" in raw:
+        return (
+            "Не удалось показать результат: сообщение слишком большое. "
+            "Скачайте CSV или уменьшите выборку."
+        )
+    return f"Ошибка выполнения: {raw}"
+
+
+def _query_error_html(exc: BaseException) -> str:
+    text = _query_error_text(exc)
+    if text.startswith("Ошибка выполнения:"):
+        return f"Ошибка выполнения:\n<code>{html.escape(str(exc))}</code>"
+    return html.escape(text)
+
+
+def _query_error_alert(exc: BaseException) -> str:
+    return _query_error_text(exc)[:200]
+
 
 def _store_table_result(
     user_id: int,
@@ -99,9 +134,7 @@ async def _run_sql_and_reply(
         )
     except Exception as exc:
         logger.warning("user=%s query_failed: %s", user_id, exc)
-        await status.edit_text(
-            f"Ошибка выполнения:\n<code>{html.escape(str(exc))}</code>"
-        )
+        await status.edit_text(_query_error_html(exc))
         await state.set_state(QueryForm.waiting_sql)
         return
 
@@ -123,11 +156,16 @@ async def _run_sql_and_reply(
         settings=settings,
         result_cache=result_cache,
     )
-    await status.delete()
-    await message.answer_rich(
-        rich_message=rich,
-        reply_markup=query_result_kb(run_id, can_favorite=True),
-    )
+    markup = query_result_kb(run_id, can_favorite=True)
+    try:
+        await message.answer_rich(rich_message=rich, reply_markup=markup)
+        await status.delete()
+    except Exception as exc:
+        logger.warning("user=%s send_result_failed: %s", user_id, exc)
+        try:
+            await status.edit_text(_query_error_html(exc), reply_markup=markup)
+        except TelegramBadRequest:
+            await message.answer(_query_error_html(exc), reply_markup=markup)
     await state.set_state(QueryForm.waiting_sql)
 
 
@@ -221,10 +259,7 @@ async def refresh_query(
         )
     except Exception as exc:
         logger.warning("user=%s refresh_failed: %s", callback.from_user.id, exc)
-        await callback.answer(
-            f"Ошибка выполнения: {exc}"[:200],
-            show_alert=True,
-        )
+        await callback.answer(_query_error_alert(exc), show_alert=True)
         return
 
     if not result.has_dataset:
@@ -244,8 +279,15 @@ async def refresh_query(
             rich_message=rich,
             reply_markup=query_result_kb(new_run_id, can_favorite=True),
         )
-    except TelegramBadRequest:
-        pass
+    except TelegramBadRequest as exc:
+        if "message is not modified" in str(exc).lower():
+            await callback.answer(f"Обновлено за {result.elapsed_ms} мс")
+            return
+        logger.warning(
+            "user=%s refresh_send_failed: %s", callback.from_user.id, exc
+        )
+        await callback.answer(_query_error_alert(exc), show_alert=True)
+        return
     await callback.answer(f"Обновлено за {result.elapsed_ms} мс")
 
 
