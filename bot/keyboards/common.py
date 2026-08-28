@@ -39,12 +39,6 @@ def subscribe_gate_kb(subscribe_buttons: list[tuple[str, str]]) -> InlineKeyboar
     return builder.as_markup()
 
 
-def connections_list_kb() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.button(text="⬅️ В меню", callback_data="menu:home")
-    return builder.as_markup()
-
-
 def connection_edit_fields_kb(connection_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for field, title in (
@@ -99,7 +93,6 @@ def favorites_menu_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="По текущему подключению", callback_data="fav:list:active")
     builder.button(text="Все избранные", callback_data="fav:list:all")
-    builder.button(text="⬅️ В меню", callback_data="menu:home")
     builder.adjust(1)
     return builder.as_markup()
 

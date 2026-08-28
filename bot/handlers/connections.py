@@ -20,7 +20,6 @@ from bot.keyboards.common import (
     cancel_kb,
     confirm_delete_kb,
     connection_edit_fields_kb,
-    connections_list_kb,
     db_type_kb,
     main_menu_kb,
     read_only_choice_kb,
@@ -95,14 +94,13 @@ async def _show_connections_list(
         active_id=user.active_connection_id,
         notice=notice,
     )
-    markup = connections_list_kb()
     if edit:
         try:
-            await message.edit_text(rich_message=rich, reply_markup=markup)
+            await message.edit_text(rich_message=rich)
             return
         except TelegramBadRequest:
             pass
-    await message.answer_rich(rich_message=rich, reply_markup=markup)
+    await message.answer_rich(rich_message=rich)
 
 
 async def _edit_or_answer(
